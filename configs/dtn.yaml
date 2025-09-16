@@ -1,0 +1,57 @@
+# AWS Cloud Mole DTN (Data Transfer Node) Configuration
+# Optimized for high-performance academic research environments
+
+# Extend the default configuration
+extends: default
+
+# DTN-specific tunnel configuration
+tunnel:
+  max_tunnels: 12  # More tunnels for DTN environments
+  mtu: 9000        # Jumbo frames for DTN networks
+
+# Aggressive scaling for research workloads
+scaling:
+  scale_up_threshold: 0.75    # Scale up earlier
+  scale_down_threshold: 0.20  # Scale down later
+  elephant_flow_threshold: 52428800  # 50MB (lower threshold)
+
+# Extended network probing for DTN optimization
+probing:
+  test_duration: "60s"  # Longer tests for more accurate results
+  enable_jumbo_frames: true
+  bandwidth_test_sizes: [1048576, 10485760, 104857600, 1073741824]  # 1MB to 1GB
+
+# DTN performance optimizations
+optimization:
+  enable_sriov: true
+  large_mtu: 9000
+  multi_queue_nic: true
+  tcp_window_scaling: true
+  cpu_governor: "performance"
+  tcp_congestion: "bbr"
+
+  # DTN-specific buffer sizes
+  buffer_sizes:
+    rmem_max: 134217728  # 128MB
+    wmem_max: 134217728  # 128MB
+    tcp_rmem: "4096 87380 134217728"
+    tcp_wmem: "4096 65536 134217728"
+    netdev_max_backlog: 5000
+
+# Enhanced AWS configuration for DTN workloads
+aws:
+  instance_types: ["c6gn.medium", "c6gn.large", "c6gn.xlarge", "c6gn.2xlarge"]
+  max_instances: 6
+  budget_limit: 500.0  # Higher budget for research workloads
+
+# Enable MPTCP for bandwidth aggregation
+mptcp:
+  enable: true
+  scheduler: "roundrobin"  # Bandwidth aggregation for large transfers
+
+# Enhanced monitoring for research environments
+monitoring:
+  enable_prometheus: true
+  detailed_metrics: true
+  export_interval: "10s"
+  retention_period: "7d"

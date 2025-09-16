@@ -1,0 +1,107 @@
+version: 2
+
+project_name: mole
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+    - make test
+
+builds:
+  - id: mole
+    binary: mole
+    main: ./cmd/mole
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/research-computing/mole/internal/version.Version={{.Version}}
+      - -X github.com/research-computing/mole/internal/version.Commit={{.Commit}}
+      - -X github.com/research-computing/mole/internal/version.Date={{.Date}}
+
+archives:
+  - id: mole
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+      - configs/*
+
+nfpms:
+  - id: mole
+    package_name: aws-cloud-mole
+    vendor: Research Computing
+    homepage: https://github.com/research-computing/mole
+    maintainer: Research Computing Team <team@research.edu>
+    description: High-performance AWS tunneling for research workloads
+    license: Apache-2.0
+    formats:
+      - deb
+      - rpm
+      - apk
+    dependencies:
+      - wireguard-tools
+    recommends:
+      - iperf3
+      - ethtool
+    contents:
+      - src: ./configs/default.yaml
+        dst: /etc/mole/default.yaml
+        type: config
+      - src: ./configs/dtn.yaml
+        dst: /etc/mole/dtn.yaml
+        type: config
+
+brews:
+  - repository:
+      owner: research-computing
+      name: homebrew-aws-cloud-mole
+    homepage: https://github.com/research-computing/mole
+    description: High-performance AWS tunneling for research workloads
+    license: Apache-2.0
+    dependencies:
+      - wireguard-tools
+    install: |
+      bin.install "mole"
+      etc.install "configs/default.yaml" => "mole/default.yaml"
+      etc.install "configs/dtn.yaml" => "mole/dtn.yaml"
+    test: |
+      system "#{bin}/mole version"
+
+dockers:
+  - image_templates:
+      - "ghcr.io/research-computing/mole:{{ .Tag }}"
+      - "ghcr.io/research-computing/mole:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--platform=linux/arm64"
+
+release:
+  github:
+    owner: research-computing
+    name: mole
+  draft: false
+  prerelease: auto
+  name_template: "AWS Cloud Mole {{.Version}}"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"

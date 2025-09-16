@@ -1,0 +1,54 @@
+# AWS Cloud Mole Default Configuration
+
+# Tunnel Configuration
+tunnel:
+  min_tunnels: 1
+  max_tunnels: 8
+  base_cidr: "10.100.0.0/16"
+  mtu: 1420
+
+# Scaling Configuration
+scaling:
+  scale_up_threshold: 0.80
+  scale_down_threshold: 0.30
+  scale_interval: "30s"
+  scale_up_cooldown: "2m"
+  scale_down_cooldown: "10m"
+  elephant_flow_threshold: 104857600  # 100MB
+  burst_detection_window: "5m"
+
+# Network Probing
+probing:
+  test_duration: "30s"
+  mtu_range: [1200, 1500, 1800, 9000]
+  parallel_streams: [1, 2, 4, 8]
+  enable_jumbo_frames: true
+  test_regions: ["us-west-2", "us-east-1", "eu-west-1"]
+  latency_test_count: 100
+
+# Process Optimization
+optimization:
+  enable_process_pinning: true
+  reserve_cores: 2
+  cpu_governor: "performance"
+  tcp_congestion: "bbr"
+
+# AWS Configuration
+aws:
+  instance_types: ["t4g.nano", "t4g.small", "c6gn.medium", "c6gn.large"]
+  max_instances: 4
+  availability_zones: ["us-west-2a", "us-west-2b", "us-west-2c"]
+  budget_limit: 100.0  # USD per month
+
+# MPTCP Configuration
+mptcp:
+  enable: false
+  scheduler: "roundrobin"  # roundrobin, redundant, adaptive
+  path_manager: "fullmesh"
+
+# Monitoring Configuration
+monitoring:
+  enable_prometheus: false
+  metrics_port: 9090
+  health_check_interval: "30s"
+  log_level: "info"
