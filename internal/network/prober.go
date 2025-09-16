@@ -163,29 +163,213 @@ func (np *NetworkProber) ProbeNetwork(ctx context.Context, targetRegion string) 
 }
 
 func (np *NetworkProber) discoverLocalInterface() error {
-	// Implementation placeholder
+	// Get default interface
+	defaultIface, err := np.getDefaultInterface()
+	if err != nil {
+		return err
+	}
+
+	np.results.LocalInterface = defaultIface
+
+	fmt.Printf("  Interface: %s (%s)\n", defaultIface.Name, defaultIface.Driver)
+	fmt.Printf("  Link Speed: %s\n", formatBandwidth(defaultIface.Speed))
+	fmt.Printf("  Current MTU: %d\n", defaultIface.MTU)
+	fmt.Printf("  Multi-queue: %d queues\n", defaultIface.QueueCount)
+
 	return nil
 }
 
 func (np *NetworkProber) discoverOptimalMTU(ctx context.Context, region string) error {
-	// Implementation placeholder
+	// Get a test endpoint in the target region
+	testEndpoint, err := np.getTestEndpoint(region)
+	if err != nil {
+		return err
+	}
+
+	bestMTU := 1500
+	bestThroughput := int64(0)
+
+	for _, mtu := range np.config.MTUDiscoveryRange {
+		// Skip jumbo frames if not enabled
+		if mtu > 1500 && !np.config.EnableJumboFrames {
+			continue
+		}
+
+		fmt.Printf("  Testing MTU %d... ", mtu)
+
+		// Test with ping to verify path MTU
+		if !np.testPathMTU(testEndpoint, mtu) {
+			fmt.Printf("❌ Path MTU exceeded\n")
+			continue
+		}
+
+		// Test throughput with this MTU
+		throughput, err := np.testMTUThroughput(ctx, testEndpoint, mtu)
+		if err != nil {
+			fmt.Printf("❌ Test failed: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("✅ %s\n", formatBandwidth(throughput))
+
+		if throughput > bestThroughput {
+			bestThroughput = throughput
+			bestMTU = mtu
+		}
+
+		// Store test result
+		np.results.DetailedMetrics.MTUTests = append(np.results.DetailedMetrics.MTUTests, MTUTestResult{
+			MTU:        mtu,
+			Throughput: throughput,
+			Success:    true,
+		})
+	}
+
+	np.results.OptimalMTU = bestMTU
+	fmt.Printf("  📏 Optimal MTU: %d bytes (throughput: %s)\n", bestMTU, formatBandwidth(bestThroughput))
+
 	return nil
 }
 
 func (np *NetworkProber) measureRegionLatencies(ctx context.Context) error {
-	// Implementation placeholder
+	np.results.AWSRegionLatencies = make(map[string]time.Duration)
+
+	for _, region := range np.config.TestRegions {
+		endpoint, err := np.getTestEndpoint(region)
+		if err != nil {
+			fmt.Printf("  ❌ Failed to get endpoint for %s: %v\n", region, err)
+			continue
+		}
+
+		fmt.Printf("  Testing %s (%s)... ", region, endpoint)
+
+		latency, err := np.measureLatency(endpoint)
+		if err != nil {
+			fmt.Printf("❌ Failed: %v\n", err)
+			continue
+		}
+
+		np.results.AWSRegionLatencies[region] = latency
+		fmt.Printf("✅ %v\n", latency)
+	}
+
 	return nil
 }
 
 func (np *NetworkProber) discoverBandwidthCapacity(ctx context.Context, region string) error {
-	// Implementation placeholder
+	endpoint, err := np.getTestEndpoint(region)
+	if err != nil {
+		return err
+	}
+
+	bestStreams := 1
+	bestThroughput := int64(0)
+
+	for _, streams := range np.config.ParallelStreams {
+		fmt.Printf("  Testing %d parallel streams... ", streams)
+
+		throughput, err := np.testBandwidth(ctx, endpoint, streams)
+		if err != nil {
+			fmt.Printf("❌ Failed: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("✅ %s\n", formatBandwidth(throughput))
+
+		if streams == 1 {
+			np.results.BaselineBandwidth = throughput
+		}
+
+		if throughput > bestThroughput {
+			bestThroughput = throughput
+			bestStreams = streams
+		}
+
+		// Store test result
+		np.results.DetailedMetrics.BandwidthTests = append(np.results.DetailedMetrics.BandwidthTests, BandwidthTestResult{
+			Streams:    streams,
+			Throughput: throughput,
+			Duration:   np.config.TestDuration,
+		})
+	}
+
+	np.results.BurstBandwidth = bestThroughput
+	np.results.OptimalStreams = bestStreams
+
+	fmt.Printf("  🚀 Baseline (1 stream): %s\n", formatBandwidth(np.results.BaselineBandwidth))
+	fmt.Printf("  🚀 Peak (%d streams): %s\n", bestStreams, formatBandwidth(bestThroughput))
+
 	return nil
 }
 
 func (np *NetworkProber) identifyBottlenecks() {
-	// Implementation placeholder
+	localSpeed := np.results.LocalInterface.Speed
+	baseline := np.results.BaselineBandwidth
+	burst := np.results.BurstBandwidth
+
+	// Analyze bottleneck location
+	if baseline < localSpeed/10 {
+		np.results.BottleneckLocation = "internet"
+	} else if baseline < localSpeed/2 {
+		np.results.BottleneckLocation = "campus"
+	} else if burst/baseline < 2 {
+		np.results.BottleneckLocation = "aws"
+	} else {
+		np.results.BottleneckLocation = "local"
+	}
+
+	fmt.Printf("  🔬 Primary bottleneck: %s\n", np.results.BottleneckLocation)
+	fmt.Printf("  📊 Utilization: %.1f%% of local interface\n",
+		float64(baseline)/float64(localSpeed)*100)
 }
 
 func (np *NetworkProber) generateRecommendations() {
-	// Implementation placeholder
+	var recommendations []string
+
+	// MTU recommendations
+	if np.results.OptimalMTU > 1500 {
+		recommendations = append(recommendations,
+			fmt.Sprintf("Enable jumbo frames (MTU %d) for +%.1f%% performance",
+				np.results.OptimalMTU,
+				float64(np.results.OptimalMTU-1500)/1500*100))
+	}
+
+	// Tunnel count recommendations
+	scalingEfficiency := float64(np.results.BurstBandwidth) / float64(np.results.BaselineBandwidth)
+	optimalTunnels := int(scalingEfficiency * 0.8) // Conservative estimate
+
+	if optimalTunnels > 1 {
+		recommendations = append(recommendations,
+			fmt.Sprintf("Use %d WireGuard tunnels for optimal throughput (%.1fx scaling efficiency)",
+				optimalTunnels, scalingEfficiency))
+	}
+
+	// Instance type recommendations based on bottleneck
+	switch np.results.BottleneckLocation {
+	case "local":
+		recommendations = append(recommendations, "Local interface is limiting - consider NIC upgrade")
+	case "campus":
+		recommendations = append(recommendations, "Campus network limiting - contact IT about bandwidth")
+	case "internet":
+		recommendations = append(recommendations, "Internet transit limiting - consider dedicated connection")
+	case "aws":
+		recommendations = append(recommendations, "AWS ingress limiting - use enhanced networking instances")
+	}
+
+	// TCP optimization recommendations
+	if np.results.AWSRegionLatencies != nil {
+		for region, latency := range np.results.AWSRegionLatencies {
+			if latency > 100*time.Millisecond {
+				recommendations = append(recommendations,
+					fmt.Sprintf("High latency to %s (%v) - enable TCP BBR congestion control", region, latency))
+			}
+		}
+	}
+
+	np.results.Recommendations = recommendations
+
+	fmt.Println("  💡 Recommendations:")
+	for _, rec := range recommendations {
+		fmt.Printf("     • %s\n", rec)
+	}
 }

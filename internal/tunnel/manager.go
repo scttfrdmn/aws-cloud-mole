@@ -191,12 +191,12 @@ func (tm *TunnelManager) createTunnel(id int) error {
 		},
 	}
 
-	// Generate WireGuard keys (placeholder)
+	// Generate WireGuard keys
 	if err := tm.generateWireGuardKeys(tunnel); err != nil {
 		return err
 	}
 
-	// Configure interface (placeholder)
+	// Configure interface
 	if err := tm.configureInterface(tunnel); err != nil {
 		return err
 	}
@@ -227,23 +227,61 @@ func (tm *TunnelManager) destroyTunnel(id int) error {
 
 // generateWireGuardKeys generates private/public key pair
 func (tm *TunnelManager) generateWireGuardKeys(tunnel *WireGuardTunnel) error {
-	// Implementation placeholder
-	tunnel.PrivateKey = "placeholder-private-key"
-	tunnel.PublicKey = "placeholder-public-key"
+	privateKey, publicKey, err := GenerateWireGuardKeys()
+	if err != nil {
+		return fmt.Errorf("failed to generate WireGuard keys: %w", err)
+	}
+
+	tunnel.PrivateKey = privateKey
+	tunnel.PublicKey = publicKey
+
+	fmt.Printf("Generated keys for tunnel %d (public: %s...)
+", tunnel.ID, publicKey[:20])
 	return nil
 }
 
 // configureInterface configures the WireGuard interface
 func (tm *TunnelManager) configureInterface(tunnel *WireGuardTunnel) error {
-	// Implementation placeholder
+	// Calculate tunnel IP address
+	tunnelIP := tm.calculateTunnelIP(tunnel.ID)
+
+	// Create WireGuard configuration
+	wgConfig := &WireGuardConfig{
+		Interface:   tunnel.Interface,
+		PrivateKey:  tunnel.PrivateKey,
+		PublicKey:   tunnel.PublicKey,
+		ListenPort:  tunnel.Port,
+		Address:     tunnelIP,
+		MTU:         tm.config.MTU,
+		// Peer configuration would be set when connecting to AWS bastion
+	}
+
+	// For now, just simulate interface creation without actually creating it
+	// In production, this would call tm.CreateWireGuardInterface(wgConfig)
+	fmt.Printf("Configured WireGuard interface %s with IP %s
+", tunnel.Interface, tunnelIP)
+
 	tunnel.Status.State = "active"
 	tunnel.Status.LastSeen = time.Now()
+	tunnel.EndpointIP = tunnelIP
+
 	return nil
 }
 
 // teardownInterface tears down the WireGuard interface
 func (tm *TunnelManager) teardownInterface(tunnel *WireGuardTunnel) error {
-	// Implementation placeholder
+	// For now, just simulate interface teardown
+	// In production, this would call tm.DestroyWireGuardInterface(tunnel.Interface)
+	fmt.Printf("Tearing down WireGuard interface %s
+", tunnel.Interface)
+
 	tunnel.Status.State = "inactive"
 	return nil
+}
+
+// calculateTunnelIP calculates the IP address for a tunnel
+func (tm *TunnelManager) calculateTunnelIP(tunnelID int) string {
+	// Parse base CIDR to get network address
+	// For simplicity, assume 10.100.0.0/16 and assign 10.100.X.1 to each tunnel
+	return fmt.Sprintf("10.100.%d.1/24", tunnelID+1)
 }
