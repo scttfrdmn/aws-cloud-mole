@@ -1,63 +1,54 @@
 package network
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net"
-	"os"
-	"os/exec"
-	"regexp"
-	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
 
 // NetworkProber handles comprehensive network performance discovery
 type NetworkProber struct {
-	config        *ProbeConfig
-	results       *ProbeResults
-	awsEndpoints  []string
-	testServers   []TestServer
-	mu            sync.RWMutex
+	config       *ProbeConfig
+	results      *ProbeResults
+	awsEndpoints []string
+	testServers  []TestServer
+	mu           sync.RWMutex
 }
 
 // ProbeConfig defines probing parameters
 type ProbeConfig struct {
-	TestDuration        time.Duration `yaml:"test_duration"`        // 30 seconds per test
-	MTUDiscoveryRange   []int         `yaml:"mtu_range"`            // [1200, 1500, 1800, 9000]
-	BandwidthTestSizes  []int64       `yaml:"bandwidth_test_sizes"` // [1MB, 10MB, 100MB]
-	LatencyTestCount    int           `yaml:"latency_test_count"`   // 100 pings
-	ParallelStreams     []int         `yaml:"parallel_streams"`     // [1, 2, 4, 8] streams
-	TestRegions         []string      `yaml:"test_regions"`         // AWS regions to test
-	EnableJumboFrames   bool          `yaml:"enable_jumbo_frames"`  // Test 9000 MTU
+	TestDuration       time.Duration `yaml:"test_duration"`        // 30 seconds per test
+	MTUDiscoveryRange  []int         `yaml:"mtu_range"`            // [1200, 1500, 1800, 9000]
+	BandwidthTestSizes []int64       `yaml:"bandwidth_test_sizes"` // [1MB, 10MB, 100MB]
+	LatencyTestCount   int           `yaml:"latency_test_count"`   // 100 pings
+	ParallelStreams    []int         `yaml:"parallel_streams"`     // [1, 2, 4, 8] streams
+	TestRegions        []string      `yaml:"test_regions"`         // AWS regions to test
+	EnableJumboFrames  bool          `yaml:"enable_jumbo_frames"`  // Test 9000 MTU
 }
 
 // ProbeResults contains comprehensive network analysis
 type ProbeResults struct {
-	Timestamp           time.Time
-	LocalInterface      NetworkInterface
-	OptimalMTU          int
-	BaselineBandwidth   int64  // Sustained single-stream throughput (bps)
-	BurstBandwidth      int64  // Peak multi-stream throughput (bps)
-	OptimalStreams      int    // Best stream count for max throughput
-	BottleneckLocation  string // "local", "campus", "internet", "aws"
-	AWSRegionLatencies  map[string]time.Duration
-	Recommendations     []string
-	DetailedMetrics     NetworkMetrics
+	Timestamp          time.Time
+	LocalInterface     NetworkInterface
+	OptimalMTU         int
+	BaselineBandwidth  int64  // Sustained single-stream throughput (bps)
+	BurstBandwidth     int64  // Peak multi-stream throughput (bps)
+	OptimalStreams     int    // Best stream count for max throughput
+	BottleneckLocation string // "local", "campus", "internet", "aws"
+	AWSRegionLatencies map[string]time.Duration
+	Recommendations    []string
+	DetailedMetrics    NetworkMetrics
 }
 
 // NetworkInterface represents local network configuration
 type NetworkInterface struct {
-	Name         string
-	Speed        int64  // Link speed in bps
-	MTU          int    // Current MTU
-	Driver       string // NIC driver
-	Offloading   map[string]bool // TCP offloading features
-	QueueCount   int    // Multi-queue support
+	Name       string
+	Speed      int64           // Link speed in bps
+	MTU        int             // Current MTU
+	Driver     string          // NIC driver
+	Offloading map[string]bool // TCP offloading features
+	QueueCount int             // Multi-queue support
 }
 
 // NetworkMetrics contains detailed test results
@@ -90,18 +81,18 @@ type BandwidthTestResult struct {
 }
 
 type LatencyTestResult struct {
-	Region      string
-	MinLatency  time.Duration
-	AvgLatency  time.Duration
-	MaxLatency  time.Duration
-	PacketLoss  float64
+	Region     string
+	MinLatency time.Duration
+	AvgLatency time.Duration
+	MaxLatency time.Duration
+	PacketLoss float64
 }
 
 type CongestionTestResult struct {
-	WindowSize   int
-	Throughput   int64
-	RTT          time.Duration
-	Congestion   string
+	WindowSize int
+	Throughput int64
+	RTT        time.Duration
+	Congestion string
 }
 
 // NewNetworkProber creates a comprehensive network prober
@@ -126,7 +117,7 @@ func NewNetworkProber() *NetworkProber {
 // ProbeNetwork performs comprehensive network performance discovery
 func (np *NetworkProber) ProbeNetwork(ctx context.Context, targetRegion string) (*ProbeResults, error) {
 	fmt.Println("🔍 Starting comprehensive network performance discovery...")
-	
+
 	// Phase 1: Local interface discovery
 	fmt.Println("📡 Analyzing local network interface...")
 	if err := np.discoverLocalInterface(); err != nil {

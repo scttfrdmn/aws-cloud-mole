@@ -45,12 +45,12 @@ type InstanceConfig struct {
 
 // NewAWSClient creates a new AWS client
 func NewAWSClient(profile, region string) (*AWSClient, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
+	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
 	)
 	if err != nil {
-		return nil, fmt.Errorf(\"failed to load AWS config: %w\", err)
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
 	return &AWSClient{
@@ -63,13 +63,13 @@ func NewAWSClient(profile, region string) (*AWSClient, error) {
 // CreateBastion provisions a bastion EC2 instance
 func (a *AWSClient) CreateBastion(ctx context.Context, config *BastionConfig) (*BastionInfo, error) {
 	// Implementation placeholder
-	fmt.Printf(\"Creating bastion instance of type %s in VPC %s\\n\", config.InstanceType, config.VPCId)
+	fmt.Printf("Creating bastion instance of type %s in VPC %s\\n", config.InstanceType, config.VPCId)
 
 	// This would use EC2 RunInstances API
 	bastionInfo := &BastionInfo{
-		InstanceId: \"i-placeholder\",
-		PublicIP:   \"54.123.45.67\",
-		PrivateIP:  \"10.0.1.100\",
+		InstanceId: "i-placeholder",
+		PublicIP:   "54.123.45.67",
+		PrivateIP:  "10.0.1.100",
 		Region:     a.region,
 	}
 
@@ -79,10 +79,10 @@ func (a *AWSClient) CreateBastion(ctx context.Context, config *BastionConfig) (*
 // CreateSecurityGroups creates security groups for tunnel traffic
 func (a *AWSClient) CreateSecurityGroups(ctx context.Context, vpcID string, tunnelCount int) (string, error) {
 	// Implementation placeholder
-	fmt.Printf(\"Creating security groups for %d tunnels in VPC %s\\n\", tunnelCount, vpcID)
+	fmt.Printf("Creating security groups for %d tunnels in VPC %s\\n", tunnelCount, vpcID)
 
 	// This would create security groups with WireGuard ports (51820+)
-	return \"sg-placeholder\", nil
+	return "sg-placeholder", nil
 }
 
 // SelectOptimalInstance returns the best Graviton instance for the workload
@@ -147,14 +147,14 @@ func (a *AWSClient) SelectOptimalInstance(throughput int64, budget float64) *Ins
 // DeployInfrastructure deploys infrastructure using Terraform
 func (a *AWSClient) DeployInfrastructure(ctx context.Context, terraformConfig interface{}) error {
 	// Implementation placeholder
-	fmt.Println(\"Deploying infrastructure with Terraform...\")
+	fmt.Println("Deploying infrastructure with Terraform...")
 	return nil
 }
 
 // TerminateBastion terminates a bastion instance
 func (a *AWSClient) TerminateBastion(ctx context.Context, instanceId string) error {
 	// Implementation placeholder
-	fmt.Printf(\"Terminating bastion instance %s\\n\", instanceId)
+	fmt.Printf("Terminating bastion instance %s\\n", instanceId)
 
 	// This would use EC2 TerminateInstances API
 	return nil
@@ -163,5 +163,27 @@ func (a *AWSClient) TerminateBastion(ctx context.Context, instanceId string) err
 // GetInstanceStatus returns the status of an EC2 instance
 func (a *AWSClient) GetInstanceStatus(ctx context.Context, instanceId string) (string, error) {
 	// Implementation placeholder
-	return \"running\", nil
-}"
+	return "running", nil
+}
+
+// InstanceTypeFromString converts string to AWS instance type
+func InstanceTypeFromString(instanceType string) types.InstanceType {
+	switch instanceType {
+	case "t4g.nano":
+		return types.InstanceTypeT4gNano
+	case "t4g.micro":
+		return types.InstanceTypeT4gMicro
+	case "t4g.small":
+		return types.InstanceTypeT4gSmall
+	case "t4g.medium":
+		return types.InstanceTypeT4gMedium
+	case "c6gn.medium":
+		return types.InstanceTypeC6gnMedium
+	case "c6gn.large":
+		return types.InstanceTypeC6gnLarge
+	case "c6gn.xlarge":
+		return types.InstanceTypeC6gnXlarge
+	default:
+		return types.InstanceTypeT4gSmall // Safe default
+	}
+}

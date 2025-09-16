@@ -1,7 +1,6 @@
 package tunnel
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -17,11 +16,11 @@ type TunnelManager struct {
 
 // TunnelConfig defines tunnel configuration
 type TunnelConfig struct {
-	MinTunnels    int    `yaml:"min_tunnels"`    // Minimum tunnels (default: 1)
-	MaxTunnels    int    `yaml:"max_tunnels"`    // Maximum tunnels (default: 8)
-	BaseCIDR      string `yaml:"base_cidr"`      // Base CIDR for tunnel IPs
-	MTU           int    `yaml:"mtu"`            // Tunnel MTU
-	ListenPort    int    `yaml:"listen_port"`    // Starting port for tunnels
+	MinTunnels int    `yaml:"min_tunnels"` // Minimum tunnels (default: 1)
+	MaxTunnels int    `yaml:"max_tunnels"` // Maximum tunnels (default: 8)
+	BaseCIDR   string `yaml:"base_cidr"`   // Base CIDR for tunnel IPs
+	MTU        int    `yaml:"mtu"`         // Tunnel MTU
+	ListenPort int    `yaml:"listen_port"` // Starting port for tunnels
 }
 
 // WireGuardTunnel represents a single WireGuard tunnel
@@ -39,20 +38,20 @@ type WireGuardTunnel struct {
 
 // TunnelStatus represents tunnel state
 type TunnelStatus struct {
-	State       string    // "active", "inactive", "error"
-	LastSeen    time.Time
-	TxBytes     string
-	RxBytes     string
-	Handshakes  int64
-	Latency     time.Duration
+	State      string // "active", "inactive", "error"
+	LastSeen   time.Time
+	TxBytes    string
+	RxBytes    string
+	Handshakes int64
+	Latency    time.Duration
 }
 
 // TunnelMetrics tracks tunnel performance
 type TunnelMetrics struct {
-	Throughput    int64     // Current throughput in bps
-	PacketLoss    float64   // Packet loss percentage
-	Jitter        time.Duration // Network jitter
-	LastUpdate    time.Time
+	Throughput int64         // Current throughput in bps
+	PacketLoss float64       // Packet loss percentage
+	Jitter     time.Duration // Network jitter
+	LastUpdate time.Time
 }
 
 // TunnelScaler manages dynamic tunnel scaling (placeholder for now)
@@ -235,8 +234,7 @@ func (tm *TunnelManager) generateWireGuardKeys(tunnel *WireGuardTunnel) error {
 	tunnel.PrivateKey = privateKey
 	tunnel.PublicKey = publicKey
 
-	fmt.Printf("Generated keys for tunnel %d (public: %s...)
-", tunnel.ID, publicKey[:20])
+	fmt.Printf("Generated keys for tunnel %d (public: %s...)\n", tunnel.ID, publicKey[:20])
 	return nil
 }
 
@@ -247,19 +245,20 @@ func (tm *TunnelManager) configureInterface(tunnel *WireGuardTunnel) error {
 
 	// Create WireGuard configuration
 	wgConfig := &WireGuardConfig{
-		Interface:   tunnel.Interface,
-		PrivateKey:  tunnel.PrivateKey,
-		PublicKey:   tunnel.PublicKey,
-		ListenPort:  tunnel.Port,
-		Address:     tunnelIP,
-		MTU:         tm.config.MTU,
-		// Peer configuration would be set when connecting to AWS bastion
+		Interface:  tunnel.Interface,
+		PrivateKey: tunnel.PrivateKey,
+		PublicKey:  tunnel.PublicKey,
+		ListenPort: tunnel.Port,
+		Address:    tunnelIP,
+		MTU:        tm.config.MTU,
+		// Peer configuration will be added when connecting to AWS bastion
+		AllowedIPs: "0.0.0.0/0",
 	}
 
-	// For now, just simulate interface creation without actually creating it
-	// In production, this would call tm.CreateWireGuardInterface(wgConfig)
-	fmt.Printf("Configured WireGuard interface %s with IP %s
-", tunnel.Interface, tunnelIP)
+	// Create the WireGuard interface
+	if err := tm.CreateWireGuardInterface(wgConfig); err != nil {
+		return fmt.Errorf("failed to create WireGuard interface: %w", err)
+	}
 
 	tunnel.Status.State = "active"
 	tunnel.Status.LastSeen = time.Now()
@@ -270,10 +269,10 @@ func (tm *TunnelManager) configureInterface(tunnel *WireGuardTunnel) error {
 
 // teardownInterface tears down the WireGuard interface
 func (tm *TunnelManager) teardownInterface(tunnel *WireGuardTunnel) error {
-	// For now, just simulate interface teardown
-	// In production, this would call tm.DestroyWireGuardInterface(tunnel.Interface)
-	fmt.Printf("Tearing down WireGuard interface %s
-", tunnel.Interface)
+	// Destroy the actual WireGuard interface
+	if err := tm.DestroyWireGuardInterface(tunnel.Interface); err != nil {
+		return fmt.Errorf("failed to destroy WireGuard interface: %w", err)
+	}
 
 	tunnel.Status.State = "inactive"
 	return nil

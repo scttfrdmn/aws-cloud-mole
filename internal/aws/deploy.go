@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,15 +12,15 @@ import (
 
 // DeploymentConfig contains all deployment parameters
 type DeploymentConfig struct {
-	VPCId            string
-	SubnetId         string
-	InstanceType     types.InstanceType
-	TunnelCount      int
-	MTUSize          int
-	AllowedCIDR      string
-	SSHPublicKey     string
-	Profile          string
-	Region           string
+	VPCId        string
+	SubnetId     string
+	InstanceType types.InstanceType
+	TunnelCount  int
+	MTUSize      int
+	AllowedCIDR  string
+	SSHPublicKey string
+	Profile      string
+	Region       string
 }
 
 // DeploymentResult contains deployment outputs
@@ -197,14 +196,14 @@ func (a *AWSClient) launchBastion(ctx context.Context, config *DeploymentConfig,
 
 	// Launch instance
 	runResult, err := a.client.RunInstances(ctx, &ec2.RunInstancesInput{
-		ImageId:        &ami,
-		InstanceType:   config.InstanceType,
-		KeyName:        &keyName,
-		MinCount:       aws.Int32(1),
-		MaxCount:       aws.Int32(1),
+		ImageId:          &ami,
+		InstanceType:     config.InstanceType,
+		KeyName:          &keyName,
+		MinCount:         aws.Int32(1),
+		MaxCount:         aws.Int32(1),
 		SecurityGroupIds: []string{sgID},
-		SubnetId:       &config.SubnetId,
-		UserData:       &userData,
+		SubnetId:         &config.SubnetId,
+		UserData:         &userData,
 		Monitoring: &types.RunInstancesMonitoringEnabled{
 			Enabled: aws.Bool(true),
 		},
