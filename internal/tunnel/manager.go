@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/research-computing/mole/internal/logger"
+	"github.com/research-computing/mole/internal/monitoring"
 )
 
 // TunnelManager manages WireGuard tunnel lifecycle with dynamic scaling
@@ -11,6 +14,8 @@ type TunnelManager struct {
 	config  *TunnelConfig
 	tunnels map[int]*WireGuardTunnel
 	scaler  *TunnelScaler
+	logger  *logger.Logger
+	monitor *monitoring.Monitor
 	mu      sync.RWMutex
 }
 
@@ -71,10 +76,19 @@ func NewTunnelManager(config *TunnelConfig) *TunnelManager {
 		}
 	}
 
-	return &TunnelManager{
+	tm := &TunnelManager{
 		config:  config,
 		tunnels: make(map[int]*WireGuardTunnel),
+		monitor: monitoring.NewMonitor(time.Second * 5), // Update every 5 seconds
 	}
+
+	// Initialize logger
+	if l, err := logger.New(logger.Config{Component: "tunnel-manager", Level: logger.LevelInfo}); err == nil {
+		tm.logger = l
+		tm.logger.Info("Created tunnel manager", "min_tunnels", config.MinTunnels, "max_tunnels", config.MaxTunnels)
+	}
+
+	return tm
 }
 
 // CreateTunnels creates the specified number of tunnels

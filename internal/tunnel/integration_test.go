@@ -6,6 +6,8 @@ import (
 	"context"
 	"os"
 	"testing"
+
+	"github.com/research-computing/mole/internal/network"
 )
 
 // Integration tests that require system privileges
@@ -58,7 +60,7 @@ func TestNetworkInterfaceIntegration(t *testing.T) {
 		t.Skip("INTEGRATION_TESTS not set, skipping network integration tests")
 	}
 
-	prober := NewNetworkProber()
+	prober := network.NewNetworkProber()
 
 	// Test actual network probing
 	results, err := prober.ProbeNetwork(context.Background(), "us-west-2")

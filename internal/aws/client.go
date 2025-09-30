@@ -7,13 +7,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 )
 
 // AWSClient manages AWS resources with cost optimization
 type AWSClient struct {
-	profile string
-	region  string
-	client  *ec2.Client
+	profile   string
+	region    string
+	client    *ec2.Client
+	iamClient *iam.Client
 }
 
 // BastionConfig defines bastion host configuration
@@ -54,9 +56,10 @@ func NewAWSClient(profile, region string) (*AWSClient, error) {
 	}
 
 	return &AWSClient{
-		profile: profile,
-		region:  region,
-		client:  ec2.NewFromConfig(cfg),
+		profile:   profile,
+		region:    region,
+		client:    ec2.NewFromConfig(cfg),
+		iamClient: iam.NewFromConfig(cfg),
 	}, nil
 }
 
@@ -186,4 +189,43 @@ func InstanceTypeFromString(instanceType string) types.InstanceType {
 	default:
 		return types.InstanceTypeT4gSmall // Safe default
 	}
+}
+
+// VPCInfo contains VPC information for display
+type VPCInfo struct {
+	VpcId     string
+	CidrBlock string
+	State     string
+	IsDefault bool
+	Name      string
+}
+
+// ListVPCs returns all VPCs in the current region with their details
+func (a *AWSClient) ListVPCs(ctx context.Context) ([]VPCInfo, error) {
+	result, err := a.client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe VPCs: %w", err)
+	}
+
+	var vpcs []VPCInfo
+	for _, vpc := range result.Vpcs {
+		vpcInfo := VPCInfo{
+			VpcId:     *vpc.VpcId,
+			CidrBlock: *vpc.CidrBlock,
+			State:     string(vpc.State),
+			IsDefault: vpc.IsDefault != nil && *vpc.IsDefault,
+		}
+
+		// Get the Name tag if it exists
+		for _, tag := range vpc.Tags {
+			if tag.Key != nil && *tag.Key == "Name" && tag.Value != nil {
+				vpcInfo.Name = *tag.Value
+				break
+			}
+		}
+
+		vpcs = append(vpcs, vpcInfo)
+	}
+
+	return vpcs, nil
 }

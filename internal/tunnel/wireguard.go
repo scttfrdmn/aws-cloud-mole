@@ -53,8 +53,9 @@ func (tm *TunnelManager) CreateWireGuardInterface(config *WireGuardConfig) error
 		return fmt.Errorf("failed to write WireGuard config: %w", err)
 	}
 
-	// Bring up the interface
-	cmd := exec.Command("sudo", "wg-quick", "up", configFile)
+	// Bring up the interface using sudo -A for askpass
+	cmd := exec.Command("sudo", "-A", "wg-quick", "up", configFile)
+	cmd.Env = append(os.Environ(), "SUDO_ASKPASS=/opt/homebrew/bin/askpass")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to bring up WireGuard interface: %w, output: %s", err, string(output))
 	}
@@ -67,8 +68,9 @@ func (tm *TunnelManager) CreateWireGuardInterface(config *WireGuardConfig) error
 func (tm *TunnelManager) DestroyWireGuardInterface(interfaceName string) error {
 	configFile := fmt.Sprintf("/tmp/%s.conf", interfaceName)
 
-	// Bring down the interface
-	cmd := exec.Command("sudo", "wg-quick", "down", configFile)
+	// Bring down the interface using sudo -A for askpass
+	cmd := exec.Command("sudo", "-A", "wg-quick", "down", configFile)
+	cmd.Env = append(os.Environ(), "SUDO_ASKPASS=/opt/homebrew/bin/askpass")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to bring down WireGuard interface: %w, output: %s", err, string(output))
 	}
@@ -96,11 +98,8 @@ func (tm *TunnelManager) generateWireGuardConfig(config *WireGuardConfig) string
 		builder.WriteString(fmt.Sprintf("MTU = %d\n", config.MTU))
 	}
 
-	// Add post-up and post-down rules for routing
-	builder.WriteString("PostUp = ip route add 0.0.0.0/0 dev %i table 200\n")
-	builder.WriteString("PostUp = ip rule add from %s table 200\n")
-	builder.WriteString("PostDown = ip route del 0.0.0.0/0 dev %i table 200\n")
-	builder.WriteString("PostDown = ip rule del from %s table 200\n")
+	// Add macOS-compatible routing (simplified, no policy routing tables)
+	// Note: Advanced routing rules not supported on macOS with iproute2mac
 
 	// Peer section
 	if config.PeerPublicKey != "" {
@@ -120,7 +119,8 @@ func (tm *TunnelManager) generateWireGuardConfig(config *WireGuardConfig) string
 
 // GetWireGuardStats retrieves statistics for a WireGuard interface
 func (tm *TunnelManager) GetWireGuardStats(interfaceName string) (*WireGuardStats, error) {
-	cmd := exec.Command("sudo", "wg", "show", interfaceName, "dump")
+	cmd := exec.Command("sudo", "-A", "wg", "show", interfaceName, "dump")
+	cmd.Env = append(os.Environ(), "SUDO_ASKPASS=/opt/homebrew/bin/askpass")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get WireGuard stats: %w", err)
@@ -185,7 +185,8 @@ func (tm *TunnelManager) ValidateWireGuardInterface(interfaceName string) error 
 	}
 
 	// Check WireGuard configuration
-	cmd = exec.Command("sudo", "wg", "show", interfaceName)
+	cmd = exec.Command("sudo", "-A", "wg", "show", interfaceName)
+	cmd.Env = append(os.Environ(), "SUDO_ASKPASS=/opt/homebrew/bin/askpass")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("WireGuard interface %s configuration error: %w", interfaceName, err)
 	}

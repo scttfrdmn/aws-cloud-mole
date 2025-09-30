@@ -130,7 +130,7 @@ resource "aws_instance" "mole_bastion" {
   instance_type           = "` + string(config.InstanceType) + `"
   key_name                = aws_key_pair.mole.key_name
   vpc_security_group_ids  = [aws_security_group.mole_wireguard.id]
-  subnet_id               = "` + config.SubnetId + `"
+  subnet_id               = "` + config.PublicSubnetId + `"
   user_data               = local.user_data
 
   associate_public_ip_address = true
@@ -184,7 +184,7 @@ Parameters:
 
   SubnetId:
     Type: AWS::EC2::Subnet::Id
-    Default: ` + config.SubnetId + `
+    Default: ` + config.PublicSubnetId + `
     Description: Public subnet ID for bastion
 
   AllowedCIDR:
@@ -427,7 +427,7 @@ func main() {
 			InstanceType:               pulumi.String("` + string(config.InstanceType) + `"),
 			KeyName:                    keyPair.KeyName,
 			VpcSecurityGroupIds:        pulumi.StringArray{sg.ID()},
-			SubnetId:                   pulumi.String("` + config.SubnetId + `"),
+			SubnetId:                   pulumi.String("` + config.PublicSubnetId + `"),
 			AssociatePublicIpAddress:   pulumi.Bool(true),
 			Monitoring:                 pulumi.Bool(true),
 			UserData: pulumi.String(` + "`" + `#!/bin/bash

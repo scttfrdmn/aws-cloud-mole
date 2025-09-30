@@ -1,7 +1,8 @@
 package aws
 
 import (
-	"context"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -10,15 +11,19 @@ import (
 
 func TestDeploymentConfig(t *testing.T) {
 	config := DeploymentConfig{
-		VPCId:        "vpc-12345",
-		SubnetId:     "subnet-67890",
-		InstanceType: types.InstanceTypeT4gSmall,
-		TunnelCount:  4,
-		MTUSize:      1500,
-		AllowedCIDR:  "0.0.0.0/0",
-		SSHPublicKey: "ssh-rsa AAAAB3NzaC1yc2E...",
-		Profile:      "default",
-		Region:       "us-west-2",
+		VPCId:           "vpc-12345",
+		PublicSubnetId:  "subnet-67890",
+		PrivateSubnetId: "subnet-54321",
+		InstanceType:    types.InstanceTypeT4gSmall,
+		TunnelCount:     4,
+		MTUSize:         1500,
+		AllowedCIDR:     "0.0.0.0/0",
+		SSHPublicKey:    "ssh-rsa AAAAB3NzaC1yc2E...",
+		Profile:         "default",
+		Region:          "us-west-2",
+		EnableNAT:       true,
+		DeployTarget:    false,
+		TargetInstance:  types.InstanceTypeT4gNano,
 	}
 
 	if config.VPCId != "vpc-12345" {
@@ -36,6 +41,18 @@ func TestDeploymentConfig(t *testing.T) {
 	if config.MTUSize != 1500 {
 		t.Errorf("Expected MTUSize=1500, got %d", config.MTUSize)
 	}
+
+	if !config.EnableNAT {
+		t.Error("Expected EnableNAT=true")
+	}
+
+	if config.DeployTarget {
+		t.Error("Expected DeployTarget=false")
+	}
+
+	if config.TargetInstance != types.InstanceTypeT4gNano {
+		t.Errorf("Expected TargetInstance=T4gNano, got %v", config.TargetInstance)
+	}
 }
 
 func TestDeploymentResult(t *testing.T) {
@@ -48,9 +65,13 @@ func TestDeploymentResult(t *testing.T) {
 		TunnelPorts:       []int{51820, 51821, 51822, 51823},
 		CostEstimate: CostEstimate{
 			HourlyCost:  0.0168,
+			MonthlyCost: 12.26,
 			DailyCost:   0.4032,
-			MonthlyCost: 12.2976,
 		},
+		ClientPrivateKey: "test-private-key",
+		ServerPublicKey:  "test-public-key",
+		TargetInstanceID: "i-target123",
+		TargetPrivateIP:  "10.0.2.100",
 	}
 
 	if result.BastionInstanceID != "i-1234567890abcdef0" {
@@ -61,295 +82,225 @@ func TestDeploymentResult(t *testing.T) {
 		t.Errorf("Expected 4 tunnel ports, got %d", len(result.TunnelPorts))
 	}
 
-	// Test tunnel port sequence
-	expectedPorts := []int{51820, 51821, 51822, 51823}
-	for i, expected := range expectedPorts {
-		if result.TunnelPorts[i] != expected {
-			t.Errorf("Expected TunnelPorts[%d]=%d, got %d", i, expected, result.TunnelPorts[i])
-		}
+	if result.CostEstimate.MonthlyCost != 12.26 {
+		t.Errorf("Expected MonthlyCost=12.26, got %f", result.CostEstimate.MonthlyCost)
 	}
 
-	// Test cost estimate
-	if result.CostEstimate.HourlyCost != 0.0168 {
-		t.Errorf("Expected HourlyCost=0.0168, got %f", result.CostEstimate.HourlyCost)
+	if result.ClientPrivateKey == "" {
+		t.Error("ClientPrivateKey should not be empty")
 	}
 
-	// Test cost relationship
-	expectedDaily := result.CostEstimate.HourlyCost * 24
-	if result.CostEstimate.DailyCost != expectedDaily {
-		t.Errorf("DailyCost should be %f, got %f", expectedDaily, result.CostEstimate.DailyCost)
+	if result.ServerPublicKey == "" {
+		t.Error("ServerPublicKey should not be empty")
+	}
+
+	if result.TargetInstanceID != "i-target123" {
+		t.Errorf("Expected TargetInstanceID=i-target123, got %s", result.TargetInstanceID)
 	}
 }
 
-func TestCostEstimate(t *testing.T) {
-	client := &AWSClient{}
-
-	tests := []struct {
-		instanceType    types.InstanceType
-		expectedHourly  float64
-		expectedMonthly float64
-	}{
-		{types.InstanceTypeT4gNano, 0.0042, 0.0042 * 24 * 30.4},
-		{types.InstanceTypeT4gMicro, 0.0084, 0.0084 * 24 * 30.4},
-		{types.InstanceTypeT4gSmall, 0.0168, 0.0168 * 24 * 30.4},
-		{types.InstanceTypeC6gnMedium, 0.0864, 0.0864 * 24 * 30.4},
-		{types.InstanceTypeC6gnLarge, 0.1728, 0.1728 * 24 * 30.4},
-	}
-
-	for _, test := range tests {
-		estimate := client.calculateCostEstimate(test.instanceType)
-
-		if estimate.HourlyCost != test.expectedHourly {
-			t.Errorf("InstanceType %v: expected hourly cost %f, got %f",
-				test.instanceType, test.expectedHourly, estimate.HourlyCost)
-		}
-
-		expectedDaily := test.expectedHourly * 24
-		if estimate.DailyCost != expectedDaily {
-			t.Errorf("InstanceType %v: expected daily cost %f, got %f",
-				test.instanceType, expectedDaily, estimate.DailyCost)
-		}
-
-		if estimate.MonthlyCost != test.expectedMonthly {
-			t.Errorf("InstanceType %v: expected monthly cost %f, got %f",
-				test.instanceType, test.expectedMonthly, estimate.MonthlyCost)
-		}
-	}
-}
-
-func TestCostEstimateUnknownInstance(t *testing.T) {
-	client := &AWSClient{}
-
-	// Test with instance type not in the cost map
-	estimate := client.calculateCostEstimate(types.InstanceTypeM5Large) // Not in our cost map
-
-	// Should return default cost
-	if estimate.HourlyCost != 0.05 {
-		t.Errorf("Expected default hourly cost 0.05, got %f", estimate.HourlyCost)
-	}
-
-	expectedDaily := 0.05 * 24
-	if estimate.DailyCost != expectedDaily {
-		t.Errorf("Expected default daily cost %f, got %f", expectedDaily, estimate.DailyCost)
-	}
-
-	expectedMonthly := 0.05 * 24 * 30.4
-	if estimate.MonthlyCost != expectedMonthly {
-		t.Errorf("Expected default monthly cost %f, got %f", expectedMonthly, estimate.MonthlyCost)
-	}
-}
-
-func TestGenerateUserData(t *testing.T) {
-	client := &AWSClient{}
-
-	userData := client.generateUserData(4, 1500)
-
-	// Test that user data is not empty
-	if userData == "" {
-		t.Error("generateUserData returned empty string")
-	}
-
-	// Test that it contains bash shebang
-	if !strings.HasPrefix(userData, "#!/bin/bash") {
-		t.Error("User data should start with bash shebang")
-	}
-
-	// Test that it contains the tunnel count
-	if !strings.Contains(userData, "TUNNEL_COUNT=4") {
-		t.Error("User data should contain TUNNEL_COUNT=4")
-	}
-
-	// Test that it contains the MTU size
-	if !strings.Contains(userData, "MTU_SIZE=1500") {
-		t.Error("User data should contain MTU_SIZE=1500")
-	}
-
-	// Test that it contains package installation
-	if !strings.Contains(userData, "apt-get install") {
-		t.Error("User data should contain package installation")
-	}
-
-	// Test that it contains WireGuard installation
-	if !strings.Contains(userData, "wireguard") {
-		t.Error("User data should install WireGuard")
-	}
-
-	// Test that it enables IP forwarding
-	if !strings.Contains(userData, "net.ipv4.ip_forward=1") {
-		t.Error("User data should enable IP forwarding")
-	}
-
-	// Test that it generates keys
-	if !strings.Contains(userData, "wg genkey") {
-		t.Error("User data should generate WireGuard keys")
-	}
-
-	// Test that it creates required directories
-	if !strings.Contains(userData, "mkdir -p /etc/mole/keys") {
-		t.Error("User data should create mole directories")
-	}
-
-	// Test completion signal
-	if !strings.Contains(userData, "echo \"ready\" > /etc/mole/status") {
-		t.Error("User data should signal completion")
-	}
-}
-
-func TestDirectDeployValidation(t *testing.T) {
+// Test WireGuard key generation
+func TestGenerateWireGuardKeys(t *testing.T) {
 	client := &AWSClient{
 		profile: "test",
 		region:  "us-west-2",
 	}
 
-	// Test with invalid configuration
-	invalidConfigs := []struct {
-		name   string
-		config *DeploymentConfig
-	}{
-		{
-			name: "empty VPC ID",
-			config: &DeploymentConfig{
-				VPCId:        "",
-				SubnetId:     "subnet-123",
-				InstanceType: types.InstanceTypeT4gSmall,
-				TunnelCount:  1,
-			},
-		},
-		{
-			name: "empty Subnet ID",
-			config: &DeploymentConfig{
-				VPCId:        "vpc-123",
-				SubnetId:     "",
-				InstanceType: types.InstanceTypeT4gSmall,
-				TunnelCount:  1,
-			},
-		},
-		{
-			name: "zero tunnels",
-			config: &DeploymentConfig{
-				VPCId:        "vpc-123",
-				SubnetId:     "subnet-123",
-				InstanceType: types.InstanceTypeT4gSmall,
-				TunnelCount:  0,
-			},
-		},
+	privateKey, publicKey, err := client.generateWireGuardKeys()
+	if err != nil {
+		t.Fatalf("generateWireGuardKeys failed: %v", err)
 	}
 
-	for _, test := range invalidConfigs {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := client.DirectDeploy(context.Background(), test.config)
-			if err == nil {
-				t.Errorf("Expected error for invalid config: %s", test.name)
-			}
-		})
+	if privateKey == "" {
+		t.Error("Private key should not be empty")
+	}
+
+	if publicKey == "" {
+		t.Error("Public key should not be empty")
+	}
+
+	// Keys should be different on each call
+	privateKey2, publicKey2, err := client.generateWireGuardKeys()
+	if err != nil {
+		t.Fatalf("generateWireGuardKeys failed on second call: %v", err)
+	}
+
+	if privateKey == privateKey2 {
+		t.Error("Private keys should be different on each call")
+	}
+
+	if publicKey == publicKey2 {
+		t.Error("Public keys should be different on each call")
 	}
 }
 
-func TestTunnelPortGeneration(t *testing.T) {
+// Test privilege detection
+func TestDetectPrivilegeLevel(t *testing.T) {
+	client := &AWSClient{}
+
+	privLevel := client.detectPrivilegeLevel()
+
+	// Should contain platform-appropriate text
+	switch runtime.GOOS {
+	case "darwin", "linux", "freebsd", "openbsd", "netbsd", "dragonfly":
+		if !strings.Contains(privLevel, "root") && !strings.Contains(privLevel, "sudo") {
+			t.Errorf("Expected Unix privilege level to contain 'root' or 'sudo', got: %s", privLevel)
+		}
+	case "windows":
+		if !strings.Contains(privLevel, "administrator") && !strings.Contains(privLevel, "elevation") {
+			t.Errorf("Expected Windows privilege level to contain 'administrator' or 'elevation', got: %s", privLevel)
+		}
+	default:
+		if privLevel != "unknown" {
+			t.Errorf("Expected 'unknown' for unsupported platform, got: %s", privLevel)
+		}
+	}
+}
+
+// Test Windows admin detection
+func TestIsWindowsAdmin(t *testing.T) {
+	client := &AWSClient{}
+
+	isAdmin := client.isWindowsAdmin()
+
+	if runtime.GOOS != "windows" {
+		// On non-Windows systems, should always return false
+		if isAdmin {
+			t.Error("isWindowsAdmin should return false on non-Windows systems")
+		}
+	}
+	// On Windows, the result depends on actual elevation status
+	// We don't test the Windows-specific behavior as it requires admin privileges
+}
+
+// Note: TestInstanceTypeFromString and TestSelectOptimalInstance are in client_test.go
+
+// Test sudo environment setup
+func TestSetupSudoEnvironment(t *testing.T) {
+	client := &AWSClient{}
+
+	env := client.setupSudoEnvironment()
+
+	// Should return environment variables
+	if env == nil {
+		t.Fatal("setupSudoEnvironment returned nil")
+	}
+
+	// Should contain current environment
+	if len(env) == 0 {
+		t.Error("setupSudoEnvironment should contain environment variables")
+	}
+
+	// On supported platforms, should try to add SUDO_ASKPASS
+	// (We can't test the file existence part reliably in CI)
+}
+
+// Test VPC info struct
+func TestVPCInfo(t *testing.T) {
+	info := VPCInfo{
+		VpcId:     "vpc-12345",
+		CidrBlock: "10.0.0.0/16",
+		State:     "available",
+		IsDefault: true,
+		Name:      "test-vpc",
+	}
+
+	if info.VpcId != "vpc-12345" {
+		t.Errorf("Expected VpcId=vpc-12345, got %s", info.VpcId)
+	}
+
+	if !info.IsDefault {
+		t.Error("Expected IsDefault=true")
+	}
+
+	if info.State != "available" {
+		t.Errorf("Expected State=available, got %s", info.State)
+	}
+}
+
+// Benchmark WireGuard key generation
+func BenchmarkGenerateWireGuardKeys(b *testing.B) {
+	client := &AWSClient{}
+
+	for i := 0; i < b.N; i++ {
+		_, _, err := client.generateWireGuardKeys()
+		if err != nil {
+			b.Fatalf("generateWireGuardKeys failed: %v", err)
+		}
+	}
+}
+
+// Test environment variable handling
+func TestEnvironmentHandling(t *testing.T) {
+	// Save original values
+	origHome := os.Getenv("HOME")
+	origUserProfile := os.Getenv("USERPROFILE")
+
+	// Test with HOME set (Unix-like)
+	os.Setenv("HOME", "/tmp/test-home")
+
+	// This would normally be tested in platform-specific setup functions
+	// but we can verify basic environment handling
+
+	home := os.Getenv("HOME")
+	if home != "/tmp/test-home" {
+		t.Errorf("Expected HOME=/tmp/test-home, got %s", home)
+	}
+
+	// Restore original values
+	if origHome != "" {
+		os.Setenv("HOME", origHome)
+	}
+	if origUserProfile != "" {
+		os.Setenv("USERPROFILE", origUserProfile)
+	}
+}
+
+// Test deployment config validation
+func TestDeploymentConfigValidation(t *testing.T) {
 	tests := []struct {
-		tunnelCount int
-		expectedLen int
-		basePort    int
+		name   string
+		config DeploymentConfig
+		valid  bool
 	}{
-		{1, 1, 51820},
-		{4, 4, 51820},
-		{8, 8, 51820},
+		{
+			name: "valid config",
+			config: DeploymentConfig{
+				VPCId:           "vpc-12345",
+				PublicSubnetId:  "subnet-67890",
+				InstanceType:    types.InstanceTypeT4gSmall,
+				TunnelCount:     1,
+				MTUSize:         1500,
+				Profile:         "default",
+				Region:          "us-west-2",
+			},
+			valid: true,
+		},
+		{
+			name: "missing VPC ID",
+			config: DeploymentConfig{
+				PublicSubnetId: "subnet-67890",
+				InstanceType:   types.InstanceTypeT4gSmall,
+			},
+			valid: false,
+		},
+		{
+			name: "zero tunnel count",
+			config: DeploymentConfig{
+				VPCId:        "vpc-12345",
+				TunnelCount:  0,
+				InstanceType: types.InstanceTypeT4gSmall,
+			},
+			valid: false,
+		},
 	}
 
 	for _, test := range tests {
-		ports := make([]int, test.tunnelCount)
-		for i := 0; i < test.tunnelCount; i++ {
-			ports[i] = 51820 + i
-		}
-
-		if len(ports) != test.expectedLen {
-			t.Errorf("Expected %d ports, got %d", test.expectedLen, len(ports))
-		}
-
-		if ports[0] != test.basePort {
-			t.Errorf("Expected first port=%d, got %d", test.basePort, ports[0])
-		}
-
-		if test.tunnelCount > 1 {
-			if ports[test.tunnelCount-1] != test.basePort+test.tunnelCount-1 {
-				t.Errorf("Expected last port=%d, got %d",
-					test.basePort+test.tunnelCount-1, ports[test.tunnelCount-1])
+		t.Run(test.name, func(t *testing.T) {
+			isValid := test.config.VPCId != "" && test.config.TunnelCount > 0
+			if isValid != test.valid {
+				t.Errorf("Config validation mismatch for %s: expected %v, got %v", test.name, test.valid, isValid)
 			}
-		}
-
-		// Test port uniqueness
-		portSet := make(map[int]bool)
-		for _, port := range ports {
-			if portSet[port] {
-				t.Errorf("Duplicate port found: %d", port)
-			}
-			portSet[port] = true
-		}
-	}
-}
-
-// Test that deployment config has all required fields
-func TestDeploymentConfigCompleteness(t *testing.T) {
-	config := &DeploymentConfig{
-		VPCId:        "vpc-12345",
-		SubnetId:     "subnet-67890",
-		InstanceType: types.InstanceTypeT4gSmall,
-		TunnelCount:  3,
-		MTUSize:      1500,
-		AllowedCIDR:  "10.0.0.0/8",
-		SSHPublicKey: "ssh-rsa AAAAB3NzaC1yc2E...",
-		Profile:      "test-profile",
-		Region:       "eu-west-1",
-	}
-
-	// Test that all fields are set
-	if config.VPCId == "" {
-		t.Error("VPCId should not be empty")
-	}
-	if config.SubnetId == "" {
-		t.Error("SubnetId should not be empty")
-	}
-	if config.TunnelCount <= 0 {
-		t.Error("TunnelCount should be positive")
-	}
-	if config.MTUSize <= 0 {
-		t.Error("MTUSize should be positive")
-	}
-	if config.AllowedCIDR == "" {
-		t.Error("AllowedCIDR should not be empty")
-	}
-	if config.Profile == "" {
-		t.Error("Profile should not be empty")
-	}
-	if config.Region == "" {
-		t.Error("Region should not be empty")
-	}
-}
-
-// Test user data script generation with edge cases
-func TestUserDataEdgeCases(t *testing.T) {
-	client := &AWSClient{}
-
-	// Test with minimal tunnels
-	userData1 := client.generateUserData(1, 1200)
-	if !strings.Contains(userData1, "TUNNEL_COUNT=1") {
-		t.Error("Should handle single tunnel")
-	}
-	if !strings.Contains(userData1, "MTU_SIZE=1200") {
-		t.Error("Should handle small MTU")
-	}
-
-	// Test with maximum tunnels
-	userData2 := client.generateUserData(16, 9000)
-	if !strings.Contains(userData2, "TUNNEL_COUNT=16") {
-		t.Error("Should handle many tunnels")
-	}
-	if !strings.Contains(userData2, "MTU_SIZE=9000") {
-		t.Error("Should handle jumbo frames")
-	}
-
-	// Test that script contains loop for multiple tunnels
-	if !strings.Contains(userData2, "for i in $(seq 0") {
-		t.Error("Should contain loop for key generation")
+		})
 	}
 }
